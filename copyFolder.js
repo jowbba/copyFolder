@@ -4,14 +4,15 @@ var crypto = require('crypto')
 var { execSync } = require('child_process')
 var EventEmitter = require('events')
 
-const folderPath = path.normalize('E:\\OneDrive')
-const targetPath = path.normalize('E:\\下载拷贝测试')
+const folderPath = path.normalize('E:\\下载')
+const targetPath = path.normalize('G:\\下载拷贝测试')
 
 // define function to copy folder-------------------------------------------------------------------------
 const list = []
 const tree = []
 const loopA = (nodePath, list , treeNode, parentNode, callback) => {
-  fs.stat(nodePath, (err, stats) => {
+  fs.lstat(nodePath, (err, stats) => {
+    if (stats.isSymbolicLink()) return callback()
     if (err || (!stats.isDirectory() && !stats.isFile())) return callback(err? err: new Error(nodePath + ' is not file or folder')) 
     let type = stats.isFile()? 'file': 'folder'
     let nodeObj = { nodePath, type, children: type == 'folder'? []: null, parentNode }
@@ -80,7 +81,7 @@ const copyA = (toPath, callback) => {
 //   })
 // })
 
-// defind class to copy folder-------------------------------------------------------------------------------------
+// define class to copy folder-------------------------------------------------------------------------------------
 class Schedule extends EventEmitter {
   constructor(folderPath, targetPath) {
     super()
@@ -102,7 +103,7 @@ class Schedule extends EventEmitter {
       console.log(`readyCopy length : ${this.readyCopy.length}`)
       console.log(`copying length : ${this.copying.length}`)
       console.log(`finish length : ${this.finish.length}`)
-    }, 2000)
+    }, 3000)
   }
 
   begin() {
@@ -111,7 +112,9 @@ class Schedule extends EventEmitter {
     node.on('loopFinish', () => {
       this.loopFinish = true
     })
-    node.on('error', this.enterFinish.bind(this))
+    node.on('error', err => {
+      this.enterError(err)
+    })
     node.begin()
   }
 
@@ -124,16 +127,19 @@ class Schedule extends EventEmitter {
     this.schedule()
   }
 
-  enterFinish(err) {
+  enterFinish() {
     clearInterval(this.countProcess)
-    if (err) {
-      this.error = err
-      return console.log('copy failed')
-    }
-    console.log('copy finish')
+    return this.emit('finish')
+  }
+
+  enterError(err) {
+    this.error = err
+    this.pause = true
+    return this.emit('error', err)
   }
   
   schedule() {
+    // all nodes have been copied finish
     if (this.loopFinish && this.finish.length == this.list.length) return this.enterFinish(null)
     if (this.pause) return
     if (this.error) return
@@ -142,8 +148,8 @@ class Schedule extends EventEmitter {
   }
 
   scheduleCopy() {
+    // push nodes into copying list when there is nodes in readycopy list
     while (this.readyCopy.length > 0 && this.copying.length < this.createLimit) {
-      // console.log('schedule copy')
       if (this.readyCopy[0].state !== 'readed') break
       let nodeObj = this.readyCopy.splice(0,1)[0]
       this.copying.push(nodeObj)
@@ -152,8 +158,8 @@ class Schedule extends EventEmitter {
   }
 
   scheduleLoop() {
+    // read next nodes will be called when a node has been copyed or readed
     if (this.readyCopy.length < this.limit && this.currentNode.state == 'readed') {
-      // console.log('schedule loop')
       return this.currentNode.next()
     }
   }
@@ -182,8 +188,9 @@ class ReadNode extends EventEmitter {
 
   readNode() {
     this.state = 'readNode'
-    fs.stat(this.nodePath, (err, stats) => {
+    fs.lstat(this.nodePath, (err, stats) => {
       // error handling
+      if (stats.isSymbolicLink()) return this.back()
       if (err || (!stats.isDirectory() && !stats.isFile())) {
         this.state = 'error'
         return this.emit('error', err? err: new Error(`${this.nodePath} is not file or folder`))
@@ -218,7 +225,7 @@ class ReadNode extends EventEmitter {
     let nextTargetPath = path.join(this.targetPath, nextName)
     let node = new ReadNode(nextPath, nextTargetPath, this.schedule)
     node.on('loopFinish', this.cb.bind(this))
-    node.on('error', err => this.emit('error'))
+    node.on('error', err => this.emit('error', err))
     node.begin()
   }
 
@@ -240,7 +247,11 @@ class ReadNode extends EventEmitter {
       writeStream.on('finish', this.copyFinish.bind(this))
       readStream.pipe(writeStream)
     }else if (this.type == 'folder') {
-      return fs.mkdir(this.targetPath, this.copyFinish.bind(this))
+      try {
+        fs.mkdirSync(this.targetPath)
+        let index = this.schedule.copying.indexOf(this)
+        this.schedule.finish.push(this.schedule.copying.splice(index, 1))
+      }catch (e) { this.emit('error', e) }
     }
   }
 
@@ -255,3 +266,9 @@ class ReadNode extends EventEmitter {
 
 let schedule = new Schedule(folderPath, targetPath)
 schedule.begin()
+schedule.on('finish', () => {
+  console.log('copy finish')
+})
+schedule.on('error', err => {
+  console.log('copy failed error is : ', err)
+})
