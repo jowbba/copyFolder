@@ -85,7 +85,7 @@ class Schedule extends EventEmitter {
   constructor(folderPath, targetPath) {
     super()
     this.folderPath = folderPath
-    this.targetPath = targetPath
+    this.targetPath = path.join(targetPath, path.basename(folderPath))
     this.currentNode = null
     this.list = []
     this.readyCopy = []
@@ -97,17 +97,17 @@ class Schedule extends EventEmitter {
     this.loopFinish = false
     this.error = null
     this.countProcess = setInterval(() => {
-      // return
       console.log(' ')
       console.log(`list length : ${this.list.length}`)
       console.log(`readyCopy length : ${this.readyCopy.length}`)
       console.log(`copying length : ${this.copying.length}`)
       console.log(`finish length : ${this.finish.length}`)
-    }, 500)
+    }, 2000)
   }
 
   begin() {
     let node = new ReadNode(this.folderPath, this.targetPath, this)
+    // trigger after all nodes have been pushed into list array
     node.on('loopFinish', () => {
       this.loopFinish = true
     })
@@ -130,7 +130,6 @@ class Schedule extends EventEmitter {
       this.error = err
       return console.log('copy failed')
     }
-    
     console.log('copy finish')
   }
   
@@ -211,7 +210,6 @@ class ReadNode extends EventEmitter {
   }
 
   next() {
-    // this.state = 'readNext'
     //emit loopFinish after all children of node have been read 
     if (this.type === 'file' || this.index >= this.count) return this.emit('loopFinish')
     // console.log(`enter next child object ${this.index} -- ${this.count}`)
@@ -255,5 +253,5 @@ class ReadNode extends EventEmitter {
   }
 }
 
-let schedule = new Schedule(folderPath, path.join(targetPath, path.basename(folderPath)))
+let schedule = new Schedule(folderPath, targetPath)
 schedule.begin()
