@@ -12,19 +12,28 @@ const list = []
 const tree = []
 const loopA = (nodePath, list , treeNode, parentNode, callback) => {
   fs.lstat(nodePath, (err, stats) => {
+    // only accpet file & foleder
     if (stats.isSymbolicLink()) return callback()
-    if (err || (!stats.isDirectory() && !stats.isFile())) return callback(err? err: new Error(nodePath + ' is not file or folder')) 
+    if (err || (!stats.isDirectory() && !stats.isFile())) {
+      return callback(err? err: new Error(nodePath + ' is not file or folder'))
+    }
+
+    // get type of file
     let type = stats.isFile()? 'file': 'folder'
     let nodeObj = { nodePath, type, children: type == 'folder'? []: null, parentNode }
     list.push(nodeObj)
     treeNode.push(nodeObj)
     if (stats.isFile()) return callback(null)
+
+    // if type if folder, loop
     fs.readdir(nodePath, (err, entries) => {
       if (err) return callback(err)
       if (!entries.length) return callback(null)
       let count = entries.length
       let index = 0
       const next = () => { loopA(path.join(nodePath, entries[index]), list, nodeObj.children, nodeObj, cb) }
+      
+      // callback in child
       let cb = (err) => {
         if (err) return callback(err)
         if (++index >= count) return callback()
@@ -38,15 +47,16 @@ const loopA = (nodePath, list , treeNode, parentNode, callback) => {
 const copyA = (toPath, callback) => {
   let index = 0
   let count = list.length
-  let countCopyedFile = setInterval(() => {
 
-  })
+  // copy next after a task has been moved
   let cb = (err) => {
     if (err) return callback(err)
     index++
     if (index >= count) return callback()
     else move()
   }
+
+  // move files by list
   let move = () => {
     let obj = list[index]
     let nodeName = path.basename(obj.nodePath)
